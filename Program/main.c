@@ -60,7 +60,7 @@
 /* Delay between frames, in UWB microseconds. See NOTE 4 below. */
 /* This is the delay from the end of the frame transmission to the enable of the receiver, as programmed for the DW1000's wait for response feature. */
 //#define POLL_TX_TO_RESP_RX_DLY_UUS 150
-#define POLL_TX_TO_RESP_RX_DLY_UUS 0
+#define POLL_TX_TO_RESP_RX_DLY_UUS 150
 /* This is the delay from Frame RX timestamp to TX reply timestamp used for calculating/setting the DW1000's delayed TX function. This includes the
  * frame length of approximately 2.66 ms with above configuration. */
 #define RESP_RX_TO_FINAL_TX_DLY_UUS 3100
@@ -69,7 +69,7 @@
 #define RESP_RX_TIMEOUT_UUS 2700	//2>>3
 
 /* Preamble timeout, in multiple of PAC size. See NOTE 6 below. */
-#define PRE_TIMEOUT 312 //8>>16
+#define PRE_TIMEOUT 32 //8>>16
 
 /* Frames used in the ranging process. See NOTE 2 below. */
 
@@ -84,7 +84,7 @@ uint8_t rx_buffer[RX_BUF_LEN];
 
 uint32_t frameLen, final_tx_time;
 uint64_t poll_tx_ts, resp_rx_ts, final_tx_ts;
-float64_t tof,distance;
+float64_t tof,distance=0;
 uint32_t poll_tx_ts1, resp_rx_ts1, poll_rx_ts, resp_tx_ts;
 int32_t rtd_init, rtd_resp;
 	
@@ -126,6 +126,7 @@ void ReConfig_WKUP(void);
 void io_ctrl(void);
 void rtc_work_sleep(void);
 void INITIATOR_Function(void);
+void Performance_Function (float64_t distance);
 /* Private functions -----------------------------------------------------------------------*/
 /* ---------------------------------------------------------------------------------------- *
  *                                                                                          *
@@ -258,7 +259,7 @@ void ReConfig_WKUP(void){
 }
 
 void io_ctrl(void){
-	LED_VCC_Set();
+//	LED_VCC_Set();
 	LED_G_Set();
 	LED_R_Reset();
 //			delay_us(1000000);
@@ -267,42 +268,27 @@ void io_ctrl(void){
 	KEY_Reset();//置位IO状态
 }
 
-void rtc_work_sleep(void)
-{
-		if(RTC_WKUP_FLAG == 1){
-			ReConfig_WKUP();
-			RTC_WKUP_FLAG = 0;
-			LED_R_Reset();
-			LED_VCC_Set();
-//			delay_us(1000000);
-			LED_R_Set();
-			LED_VCC_Set();
-			
-			printf(" ---- INITIATOR ----\r\n");
-			DEMO_SSTWR_INITIATOR();
-		}else{
-			LED_VCC_Reset();
-			LED_R_Set();
-//			delay_us(1000000);
-			LED_VCC_Set();
-			//DWT_SetSysStatus(SYS_STATUS_RXFCG | SYS_STATUS_TXFRS|SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-			DWT_ConfigureSleep(DWT_PRESRV_SLP | DWT_CONFIG, DWT_WAKE_SLPCNT | DWT_WAKE_CS | DWT_SLP_EN);
-			DWT_SetSysStatus(SYS_STATUS_RXFCG | SYS_STATUS_TXFRS|SYS_STATUS_ALL_RX_TO | SYS_STATUS_ALL_RX_ERR);
-			DWT_EnterSleep();
-			HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON,PWR_STOPENTRY_WFI);
-			HAL_MspInit();
-		}
-}
-
 void DEMO_SSTWR_INITIATOR( void )
 {
-	INITIATOR_Function();
+	for (uint8_t anchor=0;anchor< 2;anchor++){ 
+		tx_poll_msg[5]= anchor;//发给车1，车2
+		tx_poll_msg[6]= 0;//人1>>0;人2>>1
+		INITIATOR_Function();
+			
+		for(int i = 0; i<2 ; i++){
+			if(distance == 0){
+				INITIATOR_Function();
+			}
+			delay_us(10);
+		}
+	}
 }
 
 void INITIATOR_Function(void){
-//		for (uint8_t anchor=0;anchor< (MAX_ANCHOR-1);anchor++){   //添加一个for循环 20190305
-			tx_poll_msg[5]=0;                              //添加
-
+//		for (uint8_t anchor=0;anchor< 2;anchor++){   //添加一个for循环 20190305
+//			tx_poll_msg[5]= anchor;//发给车1，车2
+//			tx_poll_msg[6]= 1;//人1>>0;人2>>1
+			
     /* Write frame data to DW1000 and prepare transmission. See NOTE 8 below. */
     tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
     DWT_WriteTxData(sizeof(tx_poll_msg), tx_poll_msg, 0); /* Zero offset in TX buffer. */
@@ -372,37 +358,7 @@ void INITIATOR_Function(void){
 				distance = tof * SPEED_OF_LIGHT;
 //				distance = 0.91 * distance + 0.92;
 				distance = 0.01253*distance*distance + 0.7913*distance + 1.056;
-				
-
-				if(distance <= 2){
-					BEEP_Set();
-					LED_G_Reset();
-					delay_us(100000);
-					BEEP_Reset();
-					LED_G_Set();
-					delay_us(100000);
-					BEEP_Set();
-					LED_G_Reset();
-					delay_us(100000);
-					BEEP_Reset();
-					LED_G_Set();
-				}else if(distance > 2 && distance <=10 ){
-					BEEP_Set();
-					LED_G_Reset();
-					delay_us(300000);
-					BEEP_Reset();
-					LED_G_Set();
-					delay_us(300000);
-					BEEP_Set();
-					LED_G_Reset();
-					delay_us(300000);
-					BEEP_Reset();
-					LED_G_Set();
-				}else{
-					BEEP_Reset();
-					LED_G_Set();
-				}
-				
+				Performance_Function(distance);		
 
         /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 12 below. */
         if (status == HAL_OK) {
@@ -425,10 +381,49 @@ void INITIATOR_Function(void){
 
       /* Reset RX to properly reinitialise LDE operation. */
       DWT_RxReset();
+			
+//			//无测距就赋值0，以重发
+//			distance = 0;
     }
-//    LED_R_Toggle();
-//    delay_us(100000);
-//   }
+
+//	}
 }
+
+void Performance_Function (float64_t distance){
+	if(distance <= 2){
+		BEEP_Set();
+		LED_G_Reset();
+		delay_us(100000);
+		BEEP_Reset();
+		LED_G_Set();
+		delay_us(130000);
+		BEEP_Set();
+		LED_G_Reset();
+		delay_us(100000);
+		BEEP_Reset();
+		LED_G_Set();
+		delay_us(130000);
+		BEEP_Set();
+		LED_G_Reset();
+		delay_us(100000);
+		BEEP_Reset();
+		LED_G_Set();
+	}else if(distance > 2 && distance <=10 ){
+		BEEP_Set();
+		LED_G_Reset();
+		delay_us(300000);
+		BEEP_Reset();
+		LED_G_Set();
+		delay_us(300000);
+		BEEP_Set();
+		LED_G_Reset();
+		delay_us(300000);
+		BEEP_Reset();
+		LED_G_Set();
+	}else{
+		BEEP_Reset();
+		LED_G_Set();
+	}
+}	
 
 /*************************************** END OF FILE ****************************************/
