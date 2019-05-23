@@ -200,7 +200,7 @@ HAL_StatusTypeDef HAL_InitTick (uint32_t TickPriority)
       __HAL_RTC_WAKEUPTIMER_CLEAR_FLAG(&hRTC_Handle, RTC_FLAG_WUTF);
 
       /* Configure the Wake-up Timer counter */
-      hRTC_Handle.Instance->WUTR = (uint32_t)3000U;
+      hRTC_Handle.Instance->WUTR = (uint32_t)4000U;
 
       /* Clear the Wake-up Timer clock source bits in CR register */
       hRTC_Handle.Instance->CR &= (uint32_t)~RTC_CR_WUCKSEL;
