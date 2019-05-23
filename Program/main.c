@@ -63,13 +63,13 @@
 #define POLL_TX_TO_RESP_RX_DLY_UUS 150
 /* This is the delay from Frame RX timestamp to TX reply timestamp used for calculating/setting the DW1000's delayed TX function. This includes the
  * frame length of approximately 2.66 ms with above configuration. */
-#define RESP_RX_TO_FINAL_TX_DLY_UUS 3100
+#define RESP_RX_TO_FINAL_TX_DLY_UUS 2100
 //#define RESP_RX_TO_FINAL_TX_DLY_UUS 595
 /* Receive response timeout. See NOTE 5 below. */
-#define RESP_RX_TIMEOUT_UUS 2700	//2>>3
+#define RESP_RX_TIMEOUT_UUS 5700	//2>>3
 
 /* Preamble timeout, in multiple of PAC size. See NOTE 6 below. */
-#define PRE_TIMEOUT 32 //8>>16
+#define PRE_TIMEOUT 64 //8>>16
 
 /* Frames used in the ranging process. See NOTE 2 below. */
 
@@ -124,6 +124,7 @@ void DEMO_SSTWR_INITIATOR( void );
 void DEMO_SSTWR_RESPONDER( void );
 void ReConfig_WKUP(void);
 void io_ctrl(void);
+void DWT_sleep(void);
 void rtc_work_sleep(void);
 void INITIATOR_Function(void);
 void Performance_Function (float64_t distance);
@@ -208,7 +209,6 @@ int main( void )
 	KEY_Reset();//置位IO状态
 
   while (1) { 
-
 			ReConfig_WKUP();
 		
 			RTC_WKUP_FLAG = 0;
@@ -217,12 +217,12 @@ int main( void )
 //			delay_us(1000000);
 			LED_VCC_Set();
 			
+			/*发起测距*/
 			DEMO_SSTWR_INITIATOR();
 		
+			/*准备休眠*/
 			io_ctrl();
-			DWT_ConfigureSleep(DWT_PRESRV_SLP | DWT_CONFIG, DWT_WAKE_SLPCNT | DWT_WAKE_CS | DWT_SLP_EN);
-			DWT_SetSysStatus(SYS_STATUS_RXFCG);
-			DWT_EnterSleep();
+			DWT_sleep();
 			BSP_GPIO_DisConfig();//IO 漏电流处理
 			HAL_PWREx_EnableFlashPowerDown();
 //			BSP_GPIO_DisConfig();//IO 漏电流处理
@@ -267,15 +267,20 @@ void io_ctrl(void){
 	BEEP_Reset();
 	KEY_Reset();//置位IO状态
 }
+void DWT_sleep(void){
+	DWT_ConfigureSleep(DWT_PRESRV_SLP | DWT_CONFIG, DWT_WAKE_SLPCNT | DWT_WAKE_CS | DWT_SLP_EN);
+	DWT_SetSysStatus(SYS_STATUS_RXFCG);
+	DWT_EnterSleep();
+}
 
 void DEMO_SSTWR_INITIATOR( void )
 {
-	for (uint8_t anchor=0;anchor< 2;anchor++){ 
+	for (uint8_t anchor=0;anchor< 3;anchor++){ 
 		tx_poll_msg[5]= anchor;//发给车1，车2
-		tx_poll_msg[6]= 0;//人1>>0;人2>>1
+		tx_poll_msg[6]= 2;//人1>>0;人2>>1;人3>>2;人4>>3
 		INITIATOR_Function();
 			
-		for(int i = 0; i<2 ; i++){
+		for(int i = 0; i<3 ; i++){
 			if(distance == 0){
 				INITIATOR_Function();
 			}
@@ -383,7 +388,7 @@ void INITIATOR_Function(void){
       DWT_RxReset();
 			
 //			//无测距就赋值0，以重发
-//			distance = 0;
+			distance = 0;
     }
 
 //	}
